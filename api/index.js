@@ -8,15 +8,22 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-// 🔥 Mongo connection (FIX)
+// 🔥 Mongo state
 let isConnected = false;
+let mongoError = null;
 
+// 🔥 Mongo connect (FIXED)
 const connectDB = async () => {
     if (isConnected) return;
 
     try {
-        await mongoose.connect(process.env.MONGO_URI);
+        await mongoose.connect(process.env.MONGO_URI, {
+            serverSelectionTimeoutMS: 5000, // tezroq error qaytadi
+        });
+
         isConnected = true;
+        mongoError = null;
+
         console.log("Mongo connected ✅");
     } catch (err) {
         mongoError = err.message;
@@ -39,7 +46,7 @@ app.get("/", (req, res) => {
     });
 });
 
-// 🔥 TEST
+// 🔥 TEST (FULL DEBUG)
 app.get("/test", (req, res) => {
     const mongoState = mongoose.connection.readyState;
 
@@ -68,8 +75,9 @@ app.get("/test", (req, res) => {
         mongodb: {
             state: mongoState,
             status: mongoStatus,
-            error: mongoError
-        }
+            error: mongoError,
+        },
+        time: new Date(),
     });
 });
 
