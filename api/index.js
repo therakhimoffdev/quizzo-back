@@ -19,6 +19,7 @@ const connectDB = async () => {
         isConnected = true;
         console.log("Mongo connected ✅");
     } catch (err) {
+        mongoError = err.message;
         console.error("Mongo error ❌", err);
     }
 };
@@ -67,7 +68,8 @@ app.get("/test", (req, res) => {
         mongodb: {
             state: mongoState,
             status: mongoStatus,
-        },
+            error: mongoError
+        }
     });
 });
 
