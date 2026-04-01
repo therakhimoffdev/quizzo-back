@@ -9,10 +9,32 @@ const app = express();
 
 app.use(express.json());
 
+// 🔥 ROOT DEBUG (ENG MUHIM)
+app.get("/", (req, res) => {
+    res.json({
+        status: "OK",
+        message: "Quizzo backend working 🚀",
+        time: new Date(),
+    });
+});
+
+// 🔥 TEST ENDPOINT (errorlarni ko‘rsatadi)
+app.get("/test", (req, res) => {
+    res.json({
+        env: {
+            MONGO_URI: process.env.MONGO_URI ? "EXISTS" : "MISSING",
+            BOT_TOKEN: process.env.BOT_TOKEN ? "EXISTS" : "MISSING",
+        },
+    });
+});
+
+// 🔥 AUTH ROUTE
 app.use("/api/auth", authRoutes);
 
-// ❗ DB connection (serverless safe emas, lekin ishlaydi)
-mongoose.connect(process.env.MONGO_URI);
+// ❗ Mongo connect (simple)
+mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log("Mongo connected"))
+    .catch((err) => console.error("Mongo error:", err));
 
-// ❗ MUHIM EXPORT
+// ❗ EXPORT
 export default app;
