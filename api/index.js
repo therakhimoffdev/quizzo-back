@@ -8,32 +8,63 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
+// 🔥 GLOBAL REQUEST LOGGER (ENG MUHIM)
+app.use((req, res, next) => {
+    console.log("=================================");
+    console.log("📩 NEW REQUEST");
+    console.log("➡️ METHOD:", req.method);
+    console.log("➡️ URL:", req.originalUrl);
+    console.log("➡️ BODY:", req.body);
+    console.log("➡️ TIME:", new Date().toISOString());
+    console.log("=================================");
+
+    next();
+});
+
 // 🔥 Mongo state
 let isConnected = false;
 let mongoError = null;
 
-// 🔥 Mongo connect (FIXED)
+// 🔥 Mongo connect
 const connectDB = async () => {
     if (isConnected) return;
 
     try {
+        console.log("⏳ Connecting to Mongo...");
+        
         await mongoose.connect(process.env.MONGO_URI, {
-            serverSelectionTimeoutMS: 5000, // tezroq error qaytadi
+            serverSelectionTimeoutMS: 5000,
         });
 
         isConnected = true;
         mongoError = null;
 
-        console.log("Mongo connected ✅");
+        console.log("✅ Mongo connected");
     } catch (err) {
         mongoError = err.message;
-        console.error("Mongo error ❌", err);
+        console.error("❌ Mongo error:", err);
     }
 };
 
-// 🔥 HAR REQUEST oldidan Mongo ulanishni kutadi
+// 🔥 Mongo middleware
 app.use(async (req, res, next) => {
     await connectDB();
+    next();
+});
+
+// 🔥 RESPONSE LOGGER (MUHIM)
+app.use((req, res, next) => {
+    const oldSend = res.send;
+
+    res.send = function (data) {
+        console.log("📤 RESPONSE:");
+        console.log("⬅️ STATUS:", res.statusCode);
+        console.log("⬅️ DATA:", data);
+        console.log("=================================");
+
+        return oldSend.apply(res, arguments);
+    };
+
     next();
 });
 
@@ -46,7 +77,7 @@ app.get("/", (req, res) => {
     });
 });
 
-// 🔥 TEST (FULL DEBUG)
+// 🔥 TEST
 app.get("/test", (req, res) => {
     const mongoState = mongoose.connection.readyState;
 
@@ -69,9 +100,6 @@ app.get("/test", (req, res) => {
 
     res.json({
         status: "OK",
-        env: {
-            MONGO_URI: process.env.MONGO_URI ? "EXISTS" : "MISSING",
-        },
         mongodb: {
             state: mongoState,
             status: mongoStatus,
@@ -83,5 +111,24 @@ app.get("/test", (req, res) => {
 
 // 🔥 ROUTES
 app.use("/api/auth", authRoutes);
+
+// 🔥 NOT FOUND (MUHIM)
+app.use((req, res) => {
+    console.log("❌ ROUTE NOT FOUND:", req.originalUrl);
+
+    res.status(404).json({
+        message: "Route not found",
+    });
+});
+
+// 🔥 GLOBAL ERROR HANDLER
+app.use((err, req, res, next) => {
+    console.error("🔥 GLOBAL ERROR:", err);
+
+    res.status(500).json({
+        message: "Internal Server Error",
+        error: err.message,
+    });
+});
 
 export default app;
