@@ -6,10 +6,30 @@ import authRoutes from "../routes/auth.js";
 dotenv.config();
 
 const app = express();
-
 app.use(express.json());
 
-// 🔥 ROOT DEBUG (ENG MUHIM)
+// 🔥 Mongo connection (FIX)
+let isConnected = false;
+
+const connectDB = async () => {
+    if (isConnected) return;
+
+    try {
+        await mongoose.connect(process.env.MONGO_URI);
+        isConnected = true;
+        console.log("Mongo connected ✅");
+    } catch (err) {
+        console.error("Mongo error ❌", err);
+    }
+};
+
+// 🔥 HAR REQUEST oldidan Mongo ulanishni kutadi
+app.use(async (req, res, next) => {
+    await connectDB();
+    next();
+});
+
+// 🔥 ROOT
 app.get("/", (req, res) => {
     res.json({
         status: "OK",
@@ -18,7 +38,7 @@ app.get("/", (req, res) => {
     });
 });
 
-// 🔥 TEST ENDPOINT (errorlarni ko‘rsatadi)
+// 🔥 TEST
 app.get("/test", (req, res) => {
     const mongoState = mongoose.connection.readyState;
 
@@ -41,26 +61,17 @@ app.get("/test", (req, res) => {
 
     res.json({
         status: "OK",
-        message: "Test endpoint working 🚀",
         env: {
             MONGO_URI: process.env.MONGO_URI ? "EXISTS" : "MISSING",
-            BOT_TOKEN: process.env.BOT_TOKEN ? "EXISTS" : "MISSING",
         },
         mongodb: {
             state: mongoState,
             status: mongoStatus,
         },
-        time: new Date(),
     });
 });
 
-// 🔥 AUTH ROUTE
+// 🔥 ROUTES
 app.use("/api/auth", authRoutes);
 
-// ❗ Mongo connect (simple)
-mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log("Mongo connected"))
-    .catch((err) => console.error("Mongo error:", err));
-
-// ❗ EXPORT
 export default app;
