@@ -1,6 +1,6 @@
 // controllers/authController.js
+
 import User from "../models/User.js";
-import { verifyTelegram } from "../utils/verifyTelegram.js";
 
 function generateReferralCode() {
     return Math.random().toString(36).substring(2, 8);
@@ -11,28 +11,31 @@ export const telegramAuth = async (req, res) => {
         const { initDataRaw } = req.body;
 
         if (!initDataRaw) {
-            return res.status(400).json({ message: "initDataRaw required" });
-        }
-
-        const isValid = verifyTelegram(
-            initDataRaw,
-            process.env.BOT_TOKEN
-        );
-
-        if (!isValid) {
-            return res.status(401).json({ message: "Invalid Telegram data" });
+            return res.status(400).json({
+                success: false,
+                message: "initDataRaw required",
+            });
         }
 
         const params = new URLSearchParams(initDataRaw);
-        const tgUser = JSON.parse(params.get("user"));
+        const userStr = params.get("user");
 
+        if (!userStr) {
+            return res.status(400).json({
+                success: false,
+                message: "Telegram user data not found",
+            });
+        }
+
+        const tgUser = JSON.parse(userStr);
         const telegramId = tgUser.id.toString();
 
-        // 🔥 UPSERT (create OR update)
+        // 🔥 UPSERT (register + login)
         const user = await User.findOneAndUpdate(
             { telegramId },
             {
                 $set: {
+                    telegramId,
                     username: tgUser.username || "",
                     firstName: tgUser.first_name || "",
                     lastName: tgUser.last_name || "",
@@ -41,6 +44,7 @@ export const telegramAuth = async (req, res) => {
                 },
                 $setOnInsert: {
                     referralCode: generateReferralCode(),
+                    createdAt: new Date(),
                 },
             },
             {
@@ -49,9 +53,16 @@ export const telegramAuth = async (req, res) => {
             }
         );
 
-        res.json(user);
+        return res.json({
+            success: true,
+            user,
+        });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Server error" });
+        console.error("Auth error:", err);
+
+        return res.status(500).json({
+            success: false,
+            message: "Server error",
+        });
     }
 };
