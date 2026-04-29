@@ -1,14 +1,18 @@
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import cors from "cors"; // ✅ QO'SHILDI
 import authRoutes from "../routes/auth.js";
 
 dotenv.config();
 
 const app = express();
+
+// ✅ CORS — express.json() DAN OLDIN bo'lishi SHART
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// 🔥 GLOBAL REQUEST LOGGER (ENG MUHIM)
+// 🔥 GLOBAL REQUEST LOGGER
 app.use((req, res, next) => {
     console.log("=================================");
     console.log("📩 NEW REQUEST");
@@ -17,7 +21,6 @@ app.use((req, res, next) => {
     console.log("➡️ BODY:", req.body);
     console.log("➡️ TIME:", new Date().toISOString());
     console.log("=================================");
-
     next();
 });
 
@@ -31,7 +34,7 @@ const connectDB = async () => {
 
     try {
         console.log("⏳ Connecting to Mongo...");
-        
+
         await mongoose.connect(process.env.MONGO_URI, {
             serverSelectionTimeoutMS: 5000,
         });
@@ -52,7 +55,7 @@ app.use(async (req, res, next) => {
     next();
 });
 
-// 🔥 RESPONSE LOGGER (MUHIM)
+// 🔥 RESPONSE LOGGER
 app.use((req, res, next) => {
     const oldSend = res.send;
 
@@ -84,18 +87,10 @@ app.get("/test", (req, res) => {
     let mongoStatus = "UNKNOWN";
 
     switch (mongoState) {
-        case 0:
-            mongoStatus = "DISCONNECTED ❌";
-            break;
-        case 1:
-            mongoStatus = "CONNECTED ✅";
-            break;
-        case 2:
-            mongoStatus = "CONNECTING ⏳";
-            break;
-        case 3:
-            mongoStatus = "DISCONNECTING ⚠️";
-            break;
+        case 0: mongoStatus = "DISCONNECTED ❌"; break;
+        case 1: mongoStatus = "CONNECTED ✅"; break;
+        case 2: mongoStatus = "CONNECTING ⏳"; break;
+        case 3: mongoStatus = "DISCONNECTING ⚠️"; break;
     }
 
     res.json({
@@ -112,19 +107,15 @@ app.get("/test", (req, res) => {
 // 🔥 ROUTES
 app.use("/api/auth", authRoutes);
 
-// 🔥 NOT FOUND (MUHIM)
+// 🔥 NOT FOUND
 app.use((req, res) => {
     console.log("❌ ROUTE NOT FOUND:", req.originalUrl);
-
-    res.status(404).json({
-        message: "Route not found",
-    });
+    res.status(404).json({ message: "Route not found" });
 });
 
 // 🔥 GLOBAL ERROR HANDLER
 app.use((err, req, res, next) => {
     console.error("🔥 GLOBAL ERROR:", err);
-
     res.status(500).json({
         message: "Internal Server Error",
         error: err.message,
