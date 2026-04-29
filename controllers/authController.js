@@ -7,20 +7,32 @@ function generateReferralCode() {
 }
 
 export const telegramAuth = async (req, res) => {
+    console.log("=================================");
+    console.log("🔐 TELEGRAM AUTH STARTED");
+    console.log("📦 BODY:", JSON.stringify(req.body));
+    console.log("=================================");
+
     try {
         const { initDataRaw } = req.body;
 
         if (!initDataRaw) {
+            console.log("❌ initDataRaw YO'Q — body bo'sh keldi");
             return res.status(400).json({
                 success: false,
                 message: "initDataRaw required",
             });
         }
 
+        console.log("✅ initDataRaw keldi, uzunligi:", initDataRaw.length);
+        console.log("📄 initDataRaw:", initDataRaw);
+
         const params = new URLSearchParams(initDataRaw);
         const userStr = params.get("user");
 
+        console.log("👤 userStr:", userStr);
+
         if (!userStr) {
+            console.log("❌ 'user' parametri topilmadi");
             return res.status(400).json({
                 success: false,
                 message: "Telegram user data not found",
@@ -30,7 +42,14 @@ export const telegramAuth = async (req, res) => {
         const tgUser = JSON.parse(userStr);
         const telegramId = tgUser.id.toString();
 
-        // 🔥 UPSERT (register + login)
+        console.log("✅ Telegram user parse qilindi:");
+        console.log("   id:", telegramId);
+        console.log("   username:", tgUser.username);
+        console.log("   firstName:", tgUser.first_name);
+        console.log("   lastName:", tgUser.last_name);
+
+        console.log("⏳ MongoDB ga saqlanyapti...");
+
         const user = await User.findOneAndUpdate(
             { telegramId },
             {
@@ -53,16 +72,22 @@ export const telegramAuth = async (req, res) => {
             }
         );
 
+        console.log("✅ User saqlandi:", user._id);
+        console.log("=================================");
+
         return res.json({
             success: true,
             user,
         });
+
     } catch (err) {
-        console.error("Auth error:", err);
+        console.error("❌ AUTH ERROR:", err.message);
+        console.error("❌ STACK:", err.stack);
 
         return res.status(500).json({
             success: false,
             message: "Server error",
+            error: err.message, // ← dev uchun
         });
     }
 };
