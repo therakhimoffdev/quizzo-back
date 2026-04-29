@@ -67,7 +67,7 @@ export const telegramAuth = async (req, res) => {
                 },
             },
             {
-                new: true,
+                returnDocument: 'after',
                 upsert: true,
             }
         );
