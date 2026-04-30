@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import cors from "cors"; // ✅ QO'SHILDI
 import authRoutes from "../routes/auth.js";
 import quizRoutes from "../routes/quiz.js";
+import userRoutes from "../routes/user.js"
 dotenv.config();
 
 const app = express();
@@ -107,6 +108,7 @@ app.get("/test", (req, res) => {
 // 🔥 ROUTES
 app.use("/api/auth", authRoutes);
 app.use("/api/quiz", quizRoutes);
+app.use("/api/users", userRoutes);
 // 🔥 NOT FOUND
 app.use((req, res) => {
     console.log("❌ ROUTE NOT FOUND:", req.originalUrl);

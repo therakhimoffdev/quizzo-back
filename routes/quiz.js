@@ -115,7 +115,7 @@ router.post('/complete', async (req, res) => {
             await user.save();
         }
 
-        res.json({ success: true, user: { xp: user.xp, coins: user.coins, level: user.level } });
+        res.json({ success: true, user });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error' });
