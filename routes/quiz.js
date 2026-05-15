@@ -8,57 +8,61 @@ const router = express.Router();
 // GET /api/quiz/daily?userId=telegramId
 router.get('/daily', async (req, res) => {
     try {
-        const { userId } = req.query; // userId = telegramId
-        if (!userId) return res.status(400).json({ error: 'userId required' });
+        const { userId } = req.query;
 
-        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-
-        // User ni _id bo‘yicha topamiz (telegramId orqali)
-        const user = await User.findOne({ telegramId: userId });
-        if (!user) return res.status(404).json({ error: 'User not found' });
-
-        let dailyRecord = await UserDailyQuiz.findOne({ userId: user._id, date: today })
-            .populate('quizIds'); // to‘liq quiz ma’lumotlari (questions bilan)
-
-        if (!dailyRecord) {
-            // 5 ta random quiz tanlaymiz
-            const allQuizzes = await Quiz.find({ isActive: true });
-            if (allQuizzes.length === 0) return res.json({ quizzes: [] });
-
-            const shuffled = [...allQuizzes];
-            for (let i = shuffled.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-            }
-            const selectedQuizzes = shuffled.slice(0, 5);
-
-            dailyRecord = new UserDailyQuiz({
-                userId: user._id,
-                date: today,
-                quizIds: selectedQuizzes.map(q => q._id),
-                completedQuizzes: [],
-            });
-            await dailyRecord.save();
-            await dailyRecord.populate('quizIds');
+        if (!userId) {
+            return res.status(400).json({ error: 'userId required' });
         }
 
-        // “Yangi” quizlarni aniqlash (masalan, so‘nggi 24 soatda yaratilgan)
+        // user topamiz
+        const user = await User.findOne({ telegramId: userId });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // user ishlagan quizlar
+        const completedQuizIds = user.completedQuizIds || [];
+
+        // ishlanmagan quizlarni topamiz
+        const availableQuizzes = await Quiz.find({
+            isActive: true,
+            _id: { $nin: completedQuizIds }
+        });
+
+        if (availableQuizzes.length === 0) {
+            return res.json({ quizzes: [] });
+        }
+
+        // random aralashtirish
+        const shuffled = [...availableQuizzes];
+
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+
+        // faqat 5 tasi
+        const selectedQuizzes = shuffled.slice(0, 5);
+
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
 
-        const quizzesWithStatus = dailyRecord.quizIds.map(quiz => ({
+        const quizzes = selectedQuizzes.map((quiz) => ({
             _id: quiz._id,
             title: quiz.title,
             description: quiz.description,
             xpReward: quiz.xpReward,
             coinReward: quiz.coinReward,
-            questions: quiz.questions, // ✅ To‘liq savollar
+            questions: quiz.questions,
             questionCount: quiz.questions.length,
-            completed: dailyRecord.completedQuizzes.includes(quiz._id),
-            isNew: quiz.createdAt >= yesterday, // agar createdAt maydoni bo‘lsa
+            completed: false,
+            isNew: quiz.createdAt >= yesterday,
         }));
 
-        res.json({ quizzes: quizzesWithStatus });
+        res.json({ quizzes });
+
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error' });
@@ -69,57 +73,97 @@ router.get('/daily', async (req, res) => {
 router.post('/complete', async (req, res) => {
     try {
         const { userId, quizId, score, total, xpEarned, coinEarned } = req.body;
-        if (!userId || !quizId) return res.status(400).json({ error: 'Missing fields' });
 
+        if (!userId || !quizId) {
+            return res.status(400).json({ error: 'Missing fields' });
+        }
+
+        // User topamiz
         const user = await User.findOne({ telegramId: userId });
-        if (!user) return res.status(404).json({ error: 'User not found' });
 
-        const today = new Date().toISOString().slice(0, 10);
-        const dailyRecord = await UserDailyQuiz.findOne({ userId: user._id, date: today });
-        if (!dailyRecord) return res.status(404).json({ error: 'No daily record found' });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
 
-        // Agar quiz allaqachon bajarilgan bo‘lsa, qayta qo‘shmaymiz
-        if (!dailyRecord.completedQuizzes.includes(quizId)) {
-            dailyRecord.completedQuizzes.push(quizId);
-            await dailyRecord.save();
+        // Quiz oldin ishlanganmi tekshiramiz
+        const alreadyCompleted = user.completedQuizIds.some(
+            id => id.toString() === quizId.toString()
+        );
 
-            // ✅ USER STATISTIKASINI YANGILASH
+        // Agar hali ishlanmagan bo‘lsa
+        if (!alreadyCompleted) {
+
+            // completed history ga qo‘shamiz
+            user.completedQuizIds.push(quizId);
+
+            // ✅ USER STATISTIKASI
             user.totalQuizzes += 1;
             user.correctAnswers += score;
             user.xp += xpEarned;
             user.coins += coinEarned;
             user.dailyQuizCount += 1;
-            user.lastQuizDate = new Date();
 
-            // Competition points (masalan, har bir to‘g‘ri javob uchun 10 ball)
+            // Competition points
             user.competitionPoints += score * 10;
 
-            // Levelni hisoblash: har 500 XP da 1 level
+            // Level system
             const newLevel = Math.floor(user.xp / 500) + 1;
-            if (newLevel > user.level) user.level = newLevel;
 
-            // Streak
-            const last = user.lastQuizDate ? new Date(user.lastQuizDate) : null;
+            if (newLevel > user.level) {
+                user.level = newLevel;
+            }
+
+            // ===== STREAK SYSTEM =====
             const todayDate = new Date();
-            if (last && last.toDateString() === todayDate.toDateString()) {
-                // bugun allaqachon test topshirgan – streak oshmaydi
-            } else if (last && (todayDate - last) <= 86400000 * 2) {
-                user.streak += 1;
-                if (user.streak > user.maxStreak) user.maxStreak = user.streak;
+
+            const last = user.lastQuizDate
+                ? new Date(user.lastQuizDate)
+                : null;
+
+            if (last) {
+
+                // Sana farqini hisoblaymiz
+                const diffDays = Math.floor(
+                    (todayDate.setHours(0, 0, 0, 0) - last.setHours(0, 0, 0, 0))
+                    / 86400000
+                );
+
+                if (diffDays === 1) {
+                    // ketma-ket kun
+                    user.streak += 1;
+
+                } else if (diffDays > 1) {
+                    // streak reset
+                    user.streak = 1;
+                }
+
             } else {
+                // birinchi quiz
                 user.streak = 1;
             }
-            user.lastQuizDate = todayDate;
-            user.lastActiveAt = todayDate;
+
+            // max streak
+            if (user.streak > user.maxStreak) {
+                user.maxStreak = user.streak;
+            }
+
+            user.lastQuizDate = new Date();
+            user.lastActiveAt = new Date();
 
             await user.save();
         }
 
-        res.json({ success: true, user });
+        res.json({
+            success: true,
+            user
+        });
+
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Server error' });
+
+        res.status(500).json({
+            error: 'Server error'
+        });
     }
 });
-
 export default router;

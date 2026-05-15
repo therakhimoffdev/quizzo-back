@@ -33,6 +33,11 @@ const userSchema = new mongoose.Schema(
 
         competitionPoints: { type: Number, default: 0 },
 
+        completedQuizIds: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Quiz"
+        }],
+
         referralCode: { type: String, unique: true },
         referralsCount: { type: Number, default: 0 },
         referralEarnings: { type: Number, default: 0 },
