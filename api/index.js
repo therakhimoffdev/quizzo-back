@@ -1,10 +1,12 @@
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import cors from "cors"; // ✅ QO'SHILDI
+import cors from "cors";
 import authRoutes from "../routes/auth.js";
 import quizRoutes from "../routes/quiz.js";
-import userRoutes from "../routes/user.js"
+import userRoutes from "../routes/user.js";
+import referralRoutes from "../routes/referral.js";
+import premiumRoutes from "../routes/premium.js";
 dotenv.config();
 
 const app = express();
@@ -109,6 +111,8 @@ app.get("/test", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/quiz", quizRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/referral", referralRoutes);   // ✅
+app.use("/api/premium", premiumRoutes);
 // 🔥 NOT FOUND
 app.use((req, res) => {
     console.log("❌ ROUTE NOT FOUND:", req.originalUrl);

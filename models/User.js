@@ -1,15 +1,8 @@
-// models/User.js
 import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema(
     {
-        telegramId: {
-            type: String,
-            required: true,
-            unique: true,
-            index: true,
-        },
-
+        telegramId: { type: String, required: true, unique: true, index: true },
         username: String,
         firstName: String,
         lastName: String,
@@ -18,7 +11,6 @@ const userSchema = new mongoose.Schema(
         level: { type: Number, default: 1 },
         stage: { type: Number, default: 1 },
         xp: { type: Number, default: 0 },
-
         coins: { type: Number, default: 0 },
 
         isPremium: { type: Boolean, default: false },
@@ -30,22 +22,20 @@ const userSchema = new mongoose.Schema(
 
         totalQuizzes: { type: Number, default: 0 },
         correctAnswers: { type: Number, default: 0 },
-
         competitionPoints: { type: Number, default: 0 },
 
-        completedQuizIds: [{
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "Quiz"
-        }],
+        completedQuizIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Quiz" }],
 
-        referralCode: { type: String, unique: true },
+        // Referral fields
+        referralCode: { type: String, unique: true, sparse: true },
+        referredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
         referralsCount: { type: Number, default: 0 },
         referralEarnings: { type: Number, default: 0 },
+        referredBonusGiven: { type: Boolean, default: false }, // ✅ birinchi quiz bonus berilganmi
 
         streak: { type: Number, default: 0 },
         lastLoginDate: Date,
         maxStreak: { type: Number, default: 0 },
-
         lastActiveAt: Date,
     },
     { timestamps: true }

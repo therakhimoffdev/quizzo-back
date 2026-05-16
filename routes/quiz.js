@@ -1,30 +1,28 @@
 import express from 'express';
 import Quiz from '../models/Quiz.js';
-import UserDailyQuiz from '../models/UserDailyQuiz.js';
-import User from '../models/User.js'; // ✅ QO‘SHILDI
+import User from '../models/User.js';
 
 const router = express.Router();
 
-// GET /api/quiz/daily?userId=telegramId
+// Kunlik testlar ro‘yxati (daily limit reset tekshiruvi bilan)
 router.get('/daily', async (req, res) => {
     try {
         const { userId } = req.query;
+        if (!userId) return res.status(400).json({ error: 'userId required' });
 
-        if (!userId) {
-            return res.status(400).json({ error: 'userId required' });
-        }
-
-        // user topamiz
         const user = await User.findOne({ telegramId: userId });
+        if (!user) return res.status(404).json({ error: 'User not found' });
 
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
+        // Kunlik limitni reset qilish (agar oxirgi quiz boshqa kunda bo‘lsa)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const lastQuiz = user.lastQuizDate ? new Date(user.lastQuizDate) : null;
+        if (lastQuiz && lastQuiz.setHours(0, 0, 0, 0) !== today.getTime()) {
+            user.dailyQuizCount = 0;
+            await user.save();
         }
 
-        // user ishlagan quizlar
         const completedQuizIds = user.completedQuizIds || [];
-
-        // ishlanmagan quizlarni topamiz
         const availableQuizzes = await Quiz.find({
             isActive: true,
             _id: { $nin: completedQuizIds }
@@ -34,16 +32,12 @@ router.get('/daily', async (req, res) => {
             return res.json({ quizzes: [] });
         }
 
-        // random aralashtirish
+        // Random 5 ta
         const shuffled = [...availableQuizzes];
-
         for (let i = shuffled.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
-
             [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
         }
-
-        // faqat 5 tasi
         const selectedQuizzes = shuffled.slice(0, 5);
 
         const yesterday = new Date();
@@ -55,115 +49,119 @@ router.get('/daily', async (req, res) => {
             description: quiz.description,
             xpReward: quiz.xpReward,
             coinReward: quiz.coinReward,
-            questions: quiz.questions,
+            questions: quiz.questions.map(q => ({
+                question: q.question,
+                options: q.options,
+            })),
             questionCount: quiz.questions.length,
             completed: false,
             isNew: quiz.createdAt >= yesterday,
         }));
-
         res.json({ quizzes });
-
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
-// POST /api/quiz/complete
+// Quiz tugatish + referral bonus
 router.post('/complete', async (req, res) => {
     try {
-        const { userId, quizId, score, total, xpEarned, coinEarned } = req.body;
-
-        if (!userId || !quizId) {
-            return res.status(400).json({ error: 'Missing fields' });
+        const { userId, quizId, answers } = req.body;
+        if (!userId || !quizId || !Array.isArray(answers)) {
+            return res.status(400).json({ error: 'userId, quizId and answers array required' });
         }
 
-        // User topamiz
         const user = await User.findOne({ telegramId: userId });
+        if (!user) return res.status(404).json({ error: 'User not found' });
 
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
+        const quiz = await Quiz.findById(quizId);
+        if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
+
+        const alreadyCompleted = user.completedQuizIds.some(id => id.toString() === quizId);
+        if (alreadyCompleted) {
+            return res.status(400).json({ error: 'Quiz already completed' });
         }
 
-        // Quiz oldin ishlanganmi tekshiramiz
-        const alreadyCompleted = user.completedQuizIds.some(
-            id => id.toString() === quizId.toString()
-        );
+        // Daily limit
+        const DAILY_LIMIT_NORMAL = 5;
+        if (!user.isPremium && user.dailyQuizCount >= DAILY_LIMIT_NORMAL) {
+            return res.status(429).json({ error: 'Daily quiz limit reached' });
+        }
 
-        // Agar hali ishlanmagan bo‘lsa
-        if (!alreadyCompleted) {
-
-            // completed history ga qo‘shamiz
-            user.completedQuizIds.push(quizId);
-
-            // ✅ USER STATISTIKASI
-            user.totalQuizzes += 1;
-            user.correctAnswers += score;
-            user.xp += xpEarned;
-            user.coins += coinEarned;
-            user.dailyQuizCount += 1;
-
-            // Competition points
-            user.competitionPoints += score * 10;
-
-            // Level system
-            const newLevel = Math.floor(user.xp / 500) + 1;
-
-            if (newLevel > user.level) {
-                user.level = newLevel;
+        // Hisoblash
+        let correctCount = 0;
+        quiz.questions.forEach((q, idx) => {
+            const userAnswer = answers[idx];
+            if (userAnswer !== undefined && userAnswer !== -1 && userAnswer === q.correctAnswer) {
+                correctCount++;
             }
+        });
+        const total = quiz.questions.length;
+        const ratio = correctCount / total;
+        const xpEarned = Math.floor(quiz.xpReward * ratio);
+        const coinEarned = Math.floor(quiz.coinReward * ratio);
 
-            // ===== STREAK SYSTEM =====
-            const todayDate = new Date();
+        // User statistikasini yangilash
+        user.completedQuizIds.push(quizId);
+        user.totalQuizzes += 1;
+        user.correctAnswers += correctCount;
+        user.xp += xpEarned;
+        user.coins += coinEarned;
+        user.dailyQuizCount += 1;
+        user.competitionPoints += correctCount * 10;
 
-            const last = user.lastQuizDate
-                ? new Date(user.lastQuizDate)
-                : null;
+        // Level
+        const newLevel = Math.floor(user.xp / 500) + 1;
+        if (newLevel > user.level) user.level = newLevel;
 
-            if (last) {
+        // Streak
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const last = user.lastQuizDate ? new Date(user.lastQuizDate) : null;
+        if (last) {
+            const lastDate = new Date(last);
+            lastDate.setHours(0, 0, 0, 0);
+            const diffDays = (today - lastDate) / 86400000;
+            if (diffDays === 1) user.streak += 1;
+            else if (diffDays > 1) user.streak = 1;
+        } else {
+            user.streak = 1;
+        }
+        if (user.streak > user.maxStreak) user.maxStreak = user.streak;
+        user.lastQuizDate = new Date();
+        user.lastActiveAt = new Date();
 
-                // Sana farqini hisoblaymiz
-                const diffDays = Math.floor(
-                    (todayDate.setHours(0, 0, 0, 0) - last.setHours(0, 0, 0, 0))
-                    / 86400000
-                );
+        await user.save();
 
-                if (diffDays === 1) {
-                    // ketma-ket kun
-                    user.streak += 1;
+        // ✅ Referral bonus (birinchi quiz tugatganda)
+        if (!user.referredBonusGiven && user.referredBy) {
+            const referrer = await User.findById(user.referredBy);
+            if (referrer) {
+                const BONUS_COINS = 50;
+                const BONUS_XP = 25;
+                referrer.coins += BONUS_COINS;
+                referrer.xp += BONUS_XP;
+                referrer.referralEarnings += BONUS_COINS;
+                await referrer.save();
 
-                } else if (diffDays > 1) {
-                    // streak reset
-                    user.streak = 1;
-                }
-
-            } else {
-                // birinchi quiz
-                user.streak = 1;
+                user.referredBonusGiven = true;
+                await user.save();
             }
-
-            // max streak
-            if (user.streak > user.maxStreak) {
-                user.maxStreak = user.streak;
-            }
-
-            user.lastQuizDate = new Date();
-            user.lastActiveAt = new Date();
-
-            await user.save();
         }
 
         res.json({
             success: true,
-            user
+            user,
+            correctCount,
+            total,
+            xpEarned,
+            coinEarned
         });
-
     } catch (err) {
         console.error(err);
-
-        res.status(500).json({
-            error: 'Server error'
-        });
+        res.status(500).json({ error: 'Server error' });
     }
 });
+
 export default router;
